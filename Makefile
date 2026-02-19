@@ -10,8 +10,15 @@ BUILDDIR := build
 TARGET   := $(BUILDDIR)/xcb-view
 BENCH    := $(BUILDDIR)/bench_decode
 
-SRC      := main.c cli.c viewer.c keybinds.c renderer.c image.c png_decoder.c
-BENCH_SRC := bench_decode.c image.c png_decoder.c
+SRC      := main.c cli.c viewer.c \
+            viewer_editor.c \
+            editor_coords.c editor_pixels.c editor_draw.c \
+            editor_logic.c editor_events.c editor_render.c \
+            keybinds.c renderer.c image.c \
+            png_decoder.c png_decoder_io.c png_decoder_inflate.c \
+            png_decoder_pixels.c
+BENCH_SRC := bench_decode.c image.c png_decoder.c png_decoder_io.c \
+             png_decoder_inflate.c png_decoder_pixels.c
 
 GEN_SCRIPT := gen_procedural_pngs.py
 

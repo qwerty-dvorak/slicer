@@ -6,6 +6,7 @@
 #include <xcb/xcb.h>
 
 #include "viewer.h"
+#include "viewer_editor.h"
 
 static int
 shift_from_mask (uint32_t mask)
@@ -110,6 +111,7 @@ viewer_redraw (viewer_t *viewer, const image_t *img, const bg_config_t *bg)
         &viewer->view
     );
 
+    viewer_editor_draw_overlay (viewer, img, viewer->draw_buf);
     xcb_put_image (
         viewer->conn,
         XCB_IMAGE_FORMAT_Z_PIXMAP,
@@ -124,6 +126,8 @@ viewer_redraw (viewer_t *viewer, const image_t *img, const bg_config_t *bg)
         (uint32_t)((size_t)stride * (size_t)viewer->win_h),
         viewer->draw_buf
     );
+
+    viewer_editor_draw_overlay_text (viewer);
     xcb_flush (viewer->conn);
 }
 
@@ -256,6 +260,7 @@ viewer_run (viewer_t *viewer, const image_t *img, const bg_config_t *bg)
     int should_exit = 0;
     xcb_generic_event_t *pending = NULL;
 
+    viewer_editor_reset_for_image (img);
     viewer_redraw (viewer, img, bg);
     while (!should_exit)
         {
@@ -281,8 +286,6 @@ viewer_run (viewer_t *viewer, const image_t *img, const bg_config_t *bg)
 
             type = event->response_type & 0x7FU;
 
-            /* Coalesce motion events: drain all queued motion events and
-             * keep only the last one so we do a single redraw per frame. */
             if (type == XCB_MOTION_NOTIFY)
                 {
                     while ((next = xcb_poll_for_event (viewer->conn)) != NULL)
@@ -333,11 +336,8 @@ viewer_run (viewer_t *viewer, const image_t *img, const bg_config_t *bg)
                 case XCB_BUTTON_PRESS:
                 case XCB_BUTTON_RELEASE:
                 case XCB_MOTION_NOTIFY:
-                    keybinds_handle_event (
-                        &viewer->keybinds,
-                        &viewer->view,
-                        event,
-                        &request_redraw
+                    viewer_editor_handle_event (
+                        viewer, img, event, &request_redraw
                     );
                     break;
                 default:

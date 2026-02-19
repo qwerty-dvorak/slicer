@@ -42,6 +42,7 @@ keybinds_init (keybinds_state_t *state, view_params_t *view)
             return;
         }
 
+    state->mouse_pan_enabled = 0;
     state->dragging = 0;
     state->drag_last_x = 0;
     state->drag_last_y = 0;
@@ -49,6 +50,21 @@ keybinds_init (keybinds_state_t *state, view_params_t *view)
     view->zoom = 1.0f;
     view->pan_x = 0;
     view->pan_y = 0;
+}
+
+void
+keybinds_set_mouse_pan_enabled (keybinds_state_t *state, int enabled)
+{
+    if (!state)
+        {
+            return;
+        }
+
+    state->mouse_pan_enabled = enabled ? 1 : 0;
+    if (!state->mouse_pan_enabled)
+        {
+            state->dragging = 0;
+        }
 }
 
 void
@@ -111,7 +127,8 @@ keybinds_handle_event (
             {
                 const xcb_button_press_event_t *btn
                     = (const xcb_button_press_event_t *)event;
-                if (btn->detail == MOUSE_BUTTON_LEFT)
+                if (btn->detail == MOUSE_BUTTON_LEFT
+                    && state->mouse_pan_enabled)
                     {
                         state->dragging = 1;
                         state->drag_last_x = btn->event_x;
@@ -143,7 +160,7 @@ keybinds_handle_event (
             {
                 const xcb_motion_notify_event_t *motion
                     = (const xcb_motion_notify_event_t *)event;
-                if (state->dragging)
+                if (state->dragging && state->mouse_pan_enabled)
                     {
                         int dx = motion->event_x - state->drag_last_x;
                         int dy = motion->event_y - state->drag_last_y;

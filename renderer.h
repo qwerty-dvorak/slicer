@@ -36,6 +36,13 @@ typedef struct
     int blue_max;
 } pixel_format_t;
 
+typedef struct
+{
+    float zoom;
+    int pan_x;
+    int pan_y;
+} view_params_t;
+
 int renderer_ensure_buffer (
     uint8_t **buffer,
     size_t *buffer_size,
@@ -50,7 +57,8 @@ void renderer_draw_image (
     int win_w,
     int win_h,
     uint8_t *dst,
-    const bg_config_t *bg
+    const bg_config_t *bg,
+    const view_params_t *view
 );
 
 #endif

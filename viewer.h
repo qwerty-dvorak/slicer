@@ -7,6 +7,7 @@
 #include <xcb/xcb.h>
 
 #include "image.h"
+#include "keybinds.h"
 #include "renderer.h"
 
 typedef struct
@@ -22,6 +23,9 @@ typedef struct
     int win_h;
     uint8_t *draw_buf;
     size_t draw_buf_size;
+
+    view_params_t view;
+    keybinds_state_t keybinds;
 
     xcb_atom_t wm_protocols;
     xcb_atom_t wm_delete_window;

@@ -107,19 +107,25 @@ sample_background (
 }
 
 static void
-compute_fit_rect (
+compute_view_rect (
     int img_w,
     int img_h,
     int win_w,
     int win_h,
+    const view_params_t *view,
     int *out_w,
     int *out_h,
     int *out_x,
     int *out_y
 )
 {
+    double fit_scale;
+    double zoom;
+    double scale;
     long long scaled_w;
     long long scaled_h;
+    int pan_x = 0;
+    int pan_y = 0;
 
     if (img_w <= 0 || img_h <= 0 || win_w <= 0 || win_h <= 0)
         {
@@ -130,13 +136,21 @@ compute_fit_rect (
             return;
         }
 
-    scaled_w = win_w;
-    scaled_h = ((long long)img_h * (long long)win_w) / (long long)img_w;
-    if (scaled_h > win_h)
+    fit_scale = (double)win_w / (double)img_w;
+    if ((double)win_h / (double)img_h < fit_scale)
         {
-            scaled_h = win_h;
-            scaled_w
-                = ((long long)img_w * (long long)win_h) / (long long)img_h;
+            fit_scale = (double)win_h / (double)img_h;
+        }
+    zoom = (view && view->zoom > 0.0f) ? (double)view->zoom : 1.0;
+    scale = fit_scale * zoom;
+
+    scaled_w = (long long)((double)img_w * scale + 0.5);
+    scaled_h = (long long)((double)img_h * scale + 0.5);
+
+    if (view)
+        {
+            pan_x = view->pan_x;
+            pan_y = view->pan_y;
         }
 
     if (scaled_w < 1)
@@ -150,8 +164,8 @@ compute_fit_rect (
 
     *out_w = (int)scaled_w;
     *out_h = (int)scaled_h;
-    *out_x = (win_w - *out_w) / 2;
-    *out_y = (win_h - *out_h) / 2;
+    *out_x = (win_w - *out_w) / 2 + pan_x;
+    *out_y = (win_h - *out_h) / 2 + pan_y;
 }
 
 static void
@@ -238,13 +252,18 @@ renderer_draw_image (
     int win_w,
     int win_h,
     uint8_t *dst,
-    const bg_config_t *bg
+    const bg_config_t *bg,
+    const view_params_t *view
 )
 {
     int draw_w;
     int draw_h;
     int offset_x;
     int offset_y;
+    int start_x;
+    int start_y;
+    int end_x;
+    int end_y;
     int x;
     int y;
     size_t stride;
@@ -256,11 +275,12 @@ renderer_draw_image (
         }
 
     fill_background (format, win_w, win_h, dst, bg);
-    compute_fit_rect (
+    compute_view_rect (
         img->width,
         img->height,
         win_w,
         win_h,
+        view,
         &draw_w,
         &draw_h,
         &offset_x,
@@ -271,19 +291,34 @@ renderer_draw_image (
             return;
         }
 
-    stride = (size_t)win_w * (size_t)format->bytes_per_pixel;
-    for (y = 0; y < draw_h; y++)
+    start_x = offset_x > 0 ? offset_x : 0;
+    start_y = offset_y > 0 ? offset_y : 0;
+    end_x = offset_x + draw_w;
+    end_y = offset_y + draw_h;
+    if (end_x > win_w)
         {
-            int src_y = (y * img->height) / draw_h;
-            int dst_y = y + offset_y;
-            uint8_t *row
-                = dst + (size_t)dst_y * stride
-                  + (size_t)offset_x * (size_t)format->bytes_per_pixel;
+            end_x = win_w;
+        }
+    if (end_y > win_h)
+        {
+            end_y = win_h;
+        }
+    if (start_x >= end_x || start_y >= end_y)
+        {
+            return;
+        }
 
-            for (x = 0; x < draw_w; x++)
+    stride = (size_t)win_w * (size_t)format->bytes_per_pixel;
+    for (y = start_y; y < end_y; y++)
+        {
+            int src_y = ((y - offset_y) * img->height) / draw_h;
+            uint8_t *row = dst + (size_t)y * stride
+                           + (size_t)start_x
+                                 * (size_t)format->bytes_per_pixel;
+
+            for (x = start_x; x < end_x; x++)
                 {
-                    int src_x = (x * img->width) / draw_w;
-                    int dst_x = x + offset_x;
+                    int src_x = ((x - offset_x) * img->width) / draw_w;
                     size_t src_idx
                         = ((size_t)src_y * (size_t)img->width + (size_t)src_x)
                           * 4U;
@@ -306,7 +341,7 @@ renderer_draw_image (
                             uint8_t out_g;
                             uint8_t out_b;
 
-                            sample_checkered (dst_x, dst_y, &br, &bgc, &bb);
+                            sample_background (bg, x, y, &br, &bgc, &bb);
                             out_r
                                 = (uint8_t)(((int)r * (int)a
                                              + (int)br * (255 - (int)a) + 127)
@@ -324,7 +359,8 @@ renderer_draw_image (
 
                     store_pixel (
                         format,
-                        row + (size_t)x * (size_t)format->bytes_per_pixel,
+                        row + (size_t)(x - start_x)
+                                  * (size_t)format->bytes_per_pixel,
                         pixel
                     );
                 }

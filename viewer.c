@@ -106,7 +106,8 @@ viewer_redraw (viewer_t *viewer, const image_t *img, const bg_config_t *bg)
         viewer->win_w,
         viewer->win_h,
         viewer->draw_buf,
-        bg
+        bg,
+        &viewer->view
     );
 
     xcb_put_image (
@@ -133,7 +134,9 @@ viewer_init (viewer_t *viewer, int initial_w, int initial_h)
     xcb_screen_iterator_t screen_it;
     const xcb_visualtype_t *visual;
     xcb_event_mask_t event_mask
-        = XCB_EVENT_MASK_EXPOSURE | XCB_EVENT_MASK_STRUCTURE_NOTIFY;
+        = XCB_EVENT_MASK_EXPOSURE | XCB_EVENT_MASK_STRUCTURE_NOTIFY
+          | XCB_EVENT_MASK_KEY_PRESS | XCB_EVENT_MASK_BUTTON_PRESS
+          | XCB_EVENT_MASK_BUTTON_RELEASE | XCB_EVENT_MASK_POINTER_MOTION;
     uint32_t win_values[2];
     uint8_t root_depth;
     int bits_per_pixel;
@@ -242,6 +245,7 @@ viewer_init (viewer_t *viewer, int initial_w, int initial_h)
     xcb_create_gc (viewer->conn, viewer->gc, viewer->window, 0, NULL);
     xcb_map_window (viewer->conn, viewer->window);
     xcb_flush (viewer->conn);
+    keybinds_init (&viewer->keybinds, &viewer->view);
 
     return 1;
 }
@@ -250,12 +254,25 @@ int
 viewer_run (viewer_t *viewer, const image_t *img, const bg_config_t *bg)
 {
     int should_exit = 0;
+    xcb_generic_event_t *pending = NULL;
 
     viewer_redraw (viewer, img, bg);
     while (!should_exit)
         {
-            xcb_generic_event_t *event = xcb_wait_for_event (viewer->conn);
+            xcb_generic_event_t *event;
+            xcb_generic_event_t *next;
             uint8_t type;
+            int request_redraw = 0;
+
+            if (pending)
+                {
+                    event = pending;
+                    pending = NULL;
+                }
+            else
+                {
+                    event = xcb_wait_for_event (viewer->conn);
+                }
 
             if (!event)
                 {
@@ -263,6 +280,27 @@ viewer_run (viewer_t *viewer, const image_t *img, const bg_config_t *bg)
                 }
 
             type = event->response_type & 0x7FU;
+
+            /* Coalesce motion events: drain all queued motion events and
+             * keep only the last one so we do a single redraw per frame. */
+            if (type == XCB_MOTION_NOTIFY)
+                {
+                    while ((next = xcb_poll_for_event (viewer->conn)) != NULL)
+                        {
+                            if ((next->response_type & 0x7FU)
+                                == XCB_MOTION_NOTIFY)
+                                {
+                                    free (event);
+                                    event = next;
+                                }
+                            else
+                                {
+                                    pending = next;
+                                    break;
+                                }
+                        }
+                }
+
             switch (type)
                 {
                 case XCB_EXPOSE:
@@ -291,8 +329,23 @@ viewer_run (viewer_t *viewer, const image_t *img, const bg_config_t *bg)
                             }
                         break;
                     }
+                case XCB_KEY_PRESS:
+                case XCB_BUTTON_PRESS:
+                case XCB_BUTTON_RELEASE:
+                case XCB_MOTION_NOTIFY:
+                    keybinds_handle_event (
+                        &viewer->keybinds,
+                        &viewer->view,
+                        event,
+                        &request_redraw
+                    );
+                    break;
                 default:
                     break;
+                }
+            if (request_redraw)
+                {
+                    viewer_redraw (viewer, img, bg);
                 }
             free (event);
         }

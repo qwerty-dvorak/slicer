@@ -34,6 +34,33 @@ clamp_zoom (float zoom)
     return zoom;
 }
 
+static void
+apply_zoom_at_cursor (
+    view_params_t *view,
+    float new_zoom,
+    int cursor_x,
+    int cursor_y,
+    int win_w,
+    int win_h
+)
+{
+    float r;
+
+    if (view->zoom <= 0.0f)
+        {
+            view->zoom = new_zoom;
+            return;
+        }
+
+    r = new_zoom / view->zoom;
+
+    view->pan_x = (int)((cursor_x - win_w * 0.5f) * (1.0f - r)
+                        + (float)view->pan_x * r + 0.5f);
+    view->pan_y = (int)((cursor_y - win_h * 0.5f) * (1.0f - r)
+                        + (float)view->pan_y * r + 0.5f);
+    view->zoom = new_zoom;
+}
+
 void
 keybinds_init (keybinds_state_t *state, view_params_t *view)
 {
@@ -46,6 +73,8 @@ keybinds_init (keybinds_state_t *state, view_params_t *view)
     state->dragging = 0;
     state->drag_last_x = 0;
     state->drag_last_y = 0;
+    state->cursor_x = 0;
+    state->cursor_y = 0;
 
     view->zoom = 1.0f;
     view->pan_x = 0;
@@ -72,7 +101,9 @@ keybinds_handle_event (
     keybinds_state_t *state,
     view_params_t *view,
     const xcb_generic_event_t *event,
-    int *request_redraw
+    int *request_redraw,
+    int win_w,
+    int win_h
 )
 {
     uint8_t type;
@@ -92,13 +123,27 @@ keybinds_handle_event (
                 if (key->detail == KEYCODE_EQUAL
                     || key->detail == KEYCODE_KP_ADD)
                     {
-                        view->zoom = clamp_zoom (view->zoom * ZOOM_STEP);
+                        apply_zoom_at_cursor (
+                            view,
+                            clamp_zoom (view->zoom * ZOOM_STEP),
+                            state->cursor_x,
+                            state->cursor_y,
+                            win_w,
+                            win_h
+                        );
                         *request_redraw = 1;
                     }
                 else if (key->detail == KEYCODE_MINUS
                          || key->detail == KEYCODE_KP_SUBTRACT)
                     {
-                        view->zoom = clamp_zoom (view->zoom / ZOOM_STEP);
+                        apply_zoom_at_cursor (
+                            view,
+                            clamp_zoom (view->zoom / ZOOM_STEP),
+                            state->cursor_x,
+                            state->cursor_y,
+                            win_w,
+                            win_h
+                        );
                         *request_redraw = 1;
                     }
                 else if (key->detail == KEYCODE_LEFT)
@@ -127,6 +172,8 @@ keybinds_handle_event (
             {
                 const xcb_button_press_event_t *btn
                     = (const xcb_button_press_event_t *)event;
+                state->cursor_x = btn->event_x;
+                state->cursor_y = btn->event_y;
                 if (btn->detail == MOUSE_BUTTON_LEFT
                     && state->mouse_pan_enabled)
                     {
@@ -136,12 +183,26 @@ keybinds_handle_event (
                     }
                 else if (btn->detail == MOUSE_WHEEL_UP)
                     {
-                        view->zoom = clamp_zoom (view->zoom * ZOOM_STEP);
+                        apply_zoom_at_cursor (
+                            view,
+                            clamp_zoom (view->zoom * ZOOM_STEP),
+                            btn->event_x,
+                            btn->event_y,
+                            win_w,
+                            win_h
+                        );
                         *request_redraw = 1;
                     }
                 else if (btn->detail == MOUSE_WHEEL_DOWN)
                     {
-                        view->zoom = clamp_zoom (view->zoom / ZOOM_STEP);
+                        apply_zoom_at_cursor (
+                            view,
+                            clamp_zoom (view->zoom / ZOOM_STEP),
+                            btn->event_x,
+                            btn->event_y,
+                            win_w,
+                            win_h
+                        );
                         *request_redraw = 1;
                     }
                 break;
@@ -160,6 +221,8 @@ keybinds_handle_event (
             {
                 const xcb_motion_notify_event_t *motion
                     = (const xcb_motion_notify_event_t *)event;
+                state->cursor_x = motion->event_x;
+                state->cursor_y = motion->event_y;
                 if (state->dragging && state->mouse_pan_enabled)
                     {
                         int dx = motion->event_x - state->drag_last_x;

@@ -495,7 +495,12 @@ editor_handle_event (
        the editor did not fully consume. */
     if (!consumed)
         keybinds_handle_event (
-            &viewer->keybinds, &viewer->view, event, request_redraw
+            &viewer->keybinds,
+            &viewer->view,
+            event,
+            request_redraw,
+            viewer->win_w,
+            viewer->win_h
         );
 
     return consumed;

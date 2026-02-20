@@ -20,6 +20,9 @@ SRC      := main.c cli.c viewer.c \
 BENCH_SRC := bench_decode.c image.c png_decoder.c png_decoder_io.c \
              png_decoder_inflate.c png_decoder_pixels.c
 
+OBJ  := $(SRC:%.c=$(BUILDDIR)/%.o)
+DEPS := $(OBJ:.o=.d)
+
 GEN_SCRIPT := gen_procedural_pngs.py
 
 # --------------------------------------------------------------------
@@ -72,8 +75,16 @@ all: $(TARGET)
 $(BUILDDIR):
 	mkdir -p $(BUILDDIR)
 
-$(TARGET): $(SRC) | $(BUILDDIR)
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(SRC) $(LDLIBS)
+# Compile each source file to an object file in build/
+$(BUILDDIR)/%.o: %.c | $(BUILDDIR)
+	$(CC) $(CFLAGS) -MMD -MP -c -o $@ $<
+
+# Link the viewer from object files
+$(TARGET): $(OBJ)
+	$(CC) $(LDFLAGS) -o $@ $(OBJ) $(LDLIBS)
+
+# Pull in auto-generated header dependencies
+-include $(DEPS)
 
 # --------------------------------------------------------------------
 # Benchmark targets  (all decode-only, no XCB needed)

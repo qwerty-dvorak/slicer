@@ -141,7 +141,7 @@ editor_draw_cuts (const viewer_t *viewer, const image_t *img, uint8_t *buf)
             if (i == g_editor.selected_cut)
                 {
                     rect_i_t h1 = { x1 - 3, y1 - 3, 7, 7 };
-                    rect_i_t h2 = { x2 - 3, y2 - 3, 7, 7 };
+                    rect_i_t h2 = { x2, y2, 7, 7 };
                     fill_rect_blended (viewer, buf, &h1, 255, 255, 200, 240);
                     fill_rect_blended (viewer, buf, &h2, 255, 255, 200, 240);
                     draw_rect_outline (viewer, buf, &h1, 50, 20, 20, 255);

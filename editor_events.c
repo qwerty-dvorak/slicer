@@ -300,6 +300,9 @@ editor_handle_motion (
         {
             cut_t *cut = &g_editor.cuts[g_editor.selected_cut];
             cut_t original = *cut;
+            int old_span;
+            int new_span;
+            editor_refit_mode_t refit_mode = EDITOR_REFIT_DEFAULT;
 
             if (cut_is_vertical (cut))
                 {
@@ -325,7 +328,29 @@ editor_handle_motion (
                 }
 
             editor_normalize_cut (cut);
-            if (editor_refit_cut_to_closed_region (g_editor.selected_cut, img))
+            if (cut_is_vertical (&original))
+                {
+                    old_span = abs (original.y2 - original.y1) + 1;
+                    new_span = abs (cut->y2 - cut->y1) + 1;
+                }
+            else
+                {
+                    old_span = abs (original.x2 - original.x1) + 1;
+                    new_span = abs (cut->x2 - cut->x1) + 1;
+                }
+
+            if (new_span > old_span)
+                {
+                    refit_mode = EDITOR_REFIT_PREFER_PARENT;
+                }
+            else if (new_span < old_span)
+                {
+                    refit_mode = EDITOR_REFIT_PREFER_CHILD;
+                }
+
+            if (editor_refit_cut_to_closed_region_with_mode (
+                    g_editor.selected_cut, img, refit_mode, old_span
+                ))
                 {
                     editor_recompute_sections (img);
                     *request_redraw = 1;

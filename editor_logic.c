@@ -102,6 +102,101 @@ cut_is_point (const cut_t *cut)
 }
 
 static int
+cut_span_for_axis (const cut_t *cut)
+{
+    if (cut_is_vertical (cut))
+        {
+            return abs (cut->y2 - cut->y1) + 1;
+        }
+    if (cut_is_horizontal (cut))
+        {
+            return abs (cut->x2 - cut->x1) + 1;
+        }
+    return 0;
+}
+
+static long long
+bsp_resize_direction_penalty (
+    editor_refit_mode_t mode,
+    int candidate_span,
+    int reference_span
+)
+{
+    if (reference_span <= 0 || mode == EDITOR_REFIT_DEFAULT)
+        {
+            return 0;
+        }
+
+    if (mode == EDITOR_REFIT_PREFER_PARENT)
+        {
+            if (candidate_span <= reference_span)
+                {
+                    return (long long)(reference_span - candidate_span + 1)
+                           * 1000000LL;
+                }
+            return 0;
+        }
+
+    if (mode == EDITOR_REFIT_PREFER_CHILD)
+        {
+            if (candidate_span >= reference_span)
+                {
+                    return (long long)(candidate_span - reference_span + 1)
+                           * 1000000LL;
+                }
+            return 0;
+        }
+
+    return 0;
+}
+
+static int
+bsp_score_better (
+    editor_refit_mode_t mode,
+    long long score,
+    long long best_score,
+    int span,
+    int best_span,
+    int area,
+    int best_area
+)
+{
+    if (score < best_score)
+        {
+            return 1;
+        }
+    if (score > best_score)
+        {
+            return 0;
+        }
+
+    if (mode == EDITOR_REFIT_PREFER_PARENT)
+        {
+            if (span > best_span)
+                {
+                    return 1;
+                }
+            if (span < best_span)
+                {
+                    return 0;
+                }
+        }
+    else if (mode == EDITOR_REFIT_PREFER_CHILD)
+        {
+            if (span < best_span)
+                {
+                    return 1;
+                }
+            if (span > best_span)
+                {
+                    return 0;
+                }
+        }
+
+    return area < best_area;
+}
+
+static int
 normalize_cut_for_image (cut_t *cut, const image_t *img)
 {
     if (!cut || !img || img->width <= 0 || img->height <= 0)
@@ -190,6 +285,8 @@ static int
 bsp_choose_leaf_for_cut (
     const bsp_tree_t *tree,
     const cut_t *cut,
+    editor_refit_mode_t mode,
+    int reference_span,
     int *leaf_out,
     int *split_value_out
 )
@@ -197,14 +294,17 @@ bsp_choose_leaf_for_cut (
     int i;
     int best_leaf = -1;
     int best_split = 0;
+    int best_span = 0;
     int best_area = INT_MAX;
     long long best_score = LLONG_MAX;
+    int desired_span;
 
     if (!tree || !cut || tree->root < 0)
         {
             return 0;
         }
 
+    desired_span = cut_span_for_axis (cut);
     if (cut_is_vertical (cut))
         {
             int target_x = cut->x1;
@@ -219,7 +319,10 @@ bsp_choose_leaf_for_cut (
                     int snapped_x;
                     int dx;
                     int dy;
+                    int span;
+                    int span_delta;
                     int area;
+                    long long dir_penalty;
                     long long score;
 
                     if (!bsp_node_is_leaf (node))
@@ -243,14 +346,29 @@ bsp_choose_leaf_for_cut (
                     snapped_x = clamp_int (target_x, min_x, max_x);
                     dx = abs (target_x - snapped_x);
                     dy = distance_to_range (target_y, s->y, s->y + s->h - 1);
+                    span = s->h;
+                    span_delta = abs (span - desired_span);
                     area = s->w * s->h;
-                    score = (long long)dy * 4096LL + (long long)dx;
+                    dir_penalty = bsp_resize_direction_penalty (
+                        mode, span, reference_span
+                    );
+                    score = dir_penalty + (long long)span_delta * 128LL
+                            + (long long)dy * 4096LL + (long long)dx;
 
-                    if (score < best_score
-                        || (score == best_score && area < best_area))
+                    if (best_leaf < 0
+                        || bsp_score_better (
+                            mode,
+                            score,
+                            best_score,
+                            span,
+                            best_span,
+                            area,
+                            best_area
+                        ))
                         {
                             best_leaf = i;
                             best_split = snapped_x;
+                            best_span = span;
                             best_area = area;
                             best_score = score;
                         }
@@ -270,7 +388,10 @@ bsp_choose_leaf_for_cut (
                     int snapped_y;
                     int dx;
                     int dy;
+                    int span;
+                    int span_delta;
                     int area;
+                    long long dir_penalty;
                     long long score;
 
                     if (!bsp_node_is_leaf (node))
@@ -294,14 +415,29 @@ bsp_choose_leaf_for_cut (
                     snapped_y = clamp_int (target_y, min_y, max_y);
                     dx = distance_to_range (target_x, s->x, s->x + s->w - 1);
                     dy = abs (target_y - snapped_y);
+                    span = s->w;
+                    span_delta = abs (span - desired_span);
                     area = s->w * s->h;
-                    score = (long long)dx * 4096LL + (long long)dy;
+                    dir_penalty = bsp_resize_direction_penalty (
+                        mode, span, reference_span
+                    );
+                    score = dir_penalty + (long long)span_delta * 128LL
+                            + (long long)dx * 4096LL + (long long)dy;
 
-                    if (score < best_score
-                        || (score == best_score && area < best_area))
+                    if (best_leaf < 0
+                        || bsp_score_better (
+                            mode,
+                            score,
+                            best_score,
+                            span,
+                            best_span,
+                            area,
+                            best_area
+                        ))
                         {
                             best_leaf = i;
                             best_split = snapped_y;
+                            best_span = span;
                             best_area = area;
                             best_score = score;
                         }
@@ -437,7 +573,13 @@ bsp_split_leaf (
 }
 
 static int
-bsp_insert_cut (bsp_tree_t *tree, int cut_index, cut_t *cut)
+bsp_insert_cut (
+    bsp_tree_t *tree,
+    int cut_index,
+    cut_t *cut,
+    editor_refit_mode_t mode,
+    int reference_span
+)
 {
     int leaf_index;
     int split_value;
@@ -451,7 +593,9 @@ bsp_insert_cut (bsp_tree_t *tree, int cut_index, cut_t *cut)
         {
             return 0;
         }
-    if (!bsp_choose_leaf_for_cut (tree, cut, &leaf_index, &split_value))
+    if (!bsp_choose_leaf_for_cut (
+            tree, cut, mode, reference_span, &leaf_index, &split_value
+        ))
         {
             return 0;
         }
@@ -508,7 +652,13 @@ bsp_build_tree_from_current_cuts (
 
             /* Cuts are interpreted as k-d split nodes in sequence.
                Invalid splits are skipped during temporary builds. */
-            if (bsp_insert_cut (tree, next_index, &cut))
+            if (bsp_insert_cut (
+                    tree,
+                    next_index,
+                    &cut,
+                    EDITOR_REFIT_DEFAULT,
+                    0
+                ))
                 {
                     next_index++;
                 }
@@ -585,7 +735,9 @@ bsp_rebuild_editor_cuts_and_tree (const image_t *img, bsp_tree_t *tree)
                 {
                     continue;
                 }
-            if (!bsp_insert_cut (tree, write, &cut))
+            if (!bsp_insert_cut (
+                    tree, write, &cut, EDITOR_REFIT_DEFAULT, 0
+                ))
                 {
                     continue;
                 }
@@ -819,7 +971,9 @@ editor_add_cut_raw (cut_t cut, const image_t *img)
         {
             return 0;
         }
-    if (!bsp_insert_cut (&tree, g_editor.cut_count, &cut))
+    if (!bsp_insert_cut (
+            &tree, g_editor.cut_count, &cut, EDITOR_REFIT_DEFAULT, 0
+        ))
         {
             return 0;
         }
@@ -852,6 +1006,19 @@ editor_add_cut (cut_t cut, const image_t *img)
 int
 editor_refit_cut_to_closed_region (int cut_index, const image_t *img)
 {
+    return editor_refit_cut_to_closed_region_with_mode (
+        cut_index, img, EDITOR_REFIT_DEFAULT, 0
+    );
+}
+
+int
+editor_refit_cut_to_closed_region_with_mode (
+    int cut_index,
+    const image_t *img,
+    editor_refit_mode_t mode,
+    int reference_span
+)
+{
     bsp_tree_t tree;
     cut_t adjusted;
     int i;
@@ -877,8 +1044,9 @@ editor_refit_cut_to_closed_region (int cut_index, const image_t *img)
         }
 
     /* Re-insertion into the tree performs the "slide split value"
-       behavior for move/resize. */
-    if (!bsp_insert_cut (&tree, cut_index, &adjusted))
+       behavior. Resize uses mode/reference_span to prefer
+       parent-promotion or child-demotion in the BSP hierarchy. */
+    if (!bsp_insert_cut (&tree, cut_index, &adjusted, mode, reference_span))
         {
             return 0;
         }

@@ -13,6 +13,13 @@ void editor_normalize_cut (cut_t *cut);
 int cut_is_vertical (const cut_t *cut);
 int cut_is_horizontal (const cut_t *cut);
 
+typedef enum
+{
+    EDITOR_REFIT_DEFAULT = 0,
+    EDITOR_REFIT_PREFER_PARENT = 1,
+    EDITOR_REFIT_PREFER_CHILD = 2
+} editor_refit_mode_t;
+
 int editor_cut_equals (const cut_t *a, const cut_t *b);
 int editor_add_cut_raw (cut_t cut, const image_t *img);
 int editor_add_cut (cut_t cut, const image_t *img);
@@ -21,6 +28,12 @@ void editor_rotate_selected_cut (const image_t *img);
 void
 editor_translate_cut_clamped (cut_t *cut, int dx, int dy, const image_t *img);
 int editor_refit_cut_to_closed_region (int cut_index, const image_t *img);
+int editor_refit_cut_to_closed_region_with_mode (
+    int cut_index,
+    const image_t *img,
+    editor_refit_mode_t mode,
+    int reference_span
+);
 
 /* ------------------------------------------------------------------ */
 /* Section management                                                  */
